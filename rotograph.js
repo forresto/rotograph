@@ -2,17 +2,21 @@
 // Curved edges: https://bl.ocks.org/mbostock/4600693
 // Updating: https://bl.ocks.org/mbostock/0adcc447925ffae87975a3a81628a196
 
-let selected, data;
+// For cached data:
+// f = {}; Object.keys(data).slice(0, 100).forEach((k)=>{f[k] = {dat: data[k].dat, name: data[k].name, port: data[k].port}}); copy(JSON.stringify(f, null, 2));
+
+let selected;
+window.data = {};
 
 // Load data
 const request = async () => {
-  const response = await fetch('cached-2017-10-22.json');
+  const response = await fetch('cached-graph.json');
   const json = await response.json();
   return json;
 };
 
 request().then(json => {
-  data = json;
+  window.data = json;
   updateGraph();
 });
 
@@ -37,24 +41,42 @@ const simulation = d3
     'link',
     d3
       .forceLink()
-      .distance(5)
-      .strength(0.9)
+      .distance(2)
+      .strength(0.98)
   )
-  .force('charge', d3.forceManyBody().strength(-30))
+  .force('charge', d3.forceManyBody().strength(-25))
   .force('center', d3.forceCenter(width / 2, height / 2))
+  // .force('collide', d3.forceCollide().radius(10))
   .alphaTarget(1)
   .on('tick', ticked);
 
 // init/update data
 function updateGraph() {
+  let existingById;
+  if (node) {
+    existingById = d3.map(node.data(), function(d) {
+      return d.id;
+    });
+  }
+
   const nodes = Object.keys(data)
     .map(key => {
       const {name, port} = data[key];
-      return {
+      const n = {
         id: key,
         name,
         port
       };
+      if (existingById) {
+        const existing = existingById.get(key);
+        if (existing) {
+          n.x = existing.x - width / 2;
+          n.y = existing.y - height / 2;
+          n.vx = existing.vx;
+          n.vy = existing.vy;
+        }
+      }
+      return n;
     })
     .filter(node => {
       // Include all
@@ -65,7 +87,9 @@ function updateGraph() {
         selected.port.includes(node.id) ||
         node.port.includes(selected.id)
       );
-    });
+    })
+    // Quick & dirty way to keep it sane
+    .slice(0, 120);
 
   const nodeById = d3.map(nodes, function(d) {
     return d.id;
@@ -170,7 +194,7 @@ function updateGraph() {
 
   simulation.nodes(graph.nodes.concat(intermediateNodes));
   simulation.force('link').links(graph.links);
-  simulation.alpha(1).restart();
+  simulation.alphaTarget(0.3).restart();
 }
 
 function ticked() {
@@ -184,7 +208,9 @@ function twoPlaces(number) {
 
 function positionLink(d) {
   const [s, i, t] = d;
-  return `M ${twoPlaces(s.x)},${twoPlaces(s.y)} S ${twoPlaces(i.x)},${twoPlaces(i.y)} ${twoPlaces(t.x)},${twoPlaces(t.y)}`;
+  return `M ${twoPlaces(s.x)},${twoPlaces(s.y)} S ${twoPlaces(i.x)},${twoPlaces(
+    i.y
+  )} ${twoPlaces(t.x)},${twoPlaces(t.y)}`;
 }
 
 function positionNode(d) {
@@ -199,6 +225,7 @@ function svgClicked() {
 function nodeClicked(s) {
   d3.event.stopPropagation();
   selected = s;
+  focusUser(s.id);
   updateGraph();
 }
 
